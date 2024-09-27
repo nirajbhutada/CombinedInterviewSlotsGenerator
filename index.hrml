@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interview Scheduler</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        form {
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        #results {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        table,
+        th,
+        td {
+            border: 1px solid #ccc;
+        }
+
+        th,
+        td {
+            padding: 10px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+
+<body>
+    <body>
+        <input type="file" id="file" />
+        <button onclick="processFile()">Upload & Process File</button>
+        <button id="downloadBtn" style="display: none;" onclick="downloadExcel()">Download Updated Excel</button>
+    
+        <h3>Combined Slots</h3>
+        <table id="combinedSlotsTable" border="1">
+            <thead>
+                <tr>
+                    <th>Time Slot</th>
+                    <th>SA</th>
+                    <th>M</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    
+        <h3>Unassigned SAs</h3>
+        <table id="unassignedSATable" border="1">
+            <thead>
+                <tr>
+                    <th>Time Slot</th>
+                    <th>SAs</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    
+        <h3>Unassigned Ms</h3>
+        <table id="unassignedMTable" border="1">
+            <thead>
+                <tr>
+                    <th>Time Slot</th>
+                    <th>Ms</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+   
+
+        <script>
+            let workbook;
+            let sheetName;
+            let updatedExcelData;
+        
+            // Function to process the uploaded file
+            function processFile() {
+                const fileInput = document.getElementById('file');
+                const file = fileInput.files[0];
+                if (!file) {
+                    alert('Please upload an Excel file!');
+                    return;
+                }
+        
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const data = new Uint8Array(e.target.result);
+                    workbook = XLSX.read(data, {type: 'array'});
+                    sheetName = workbook.SheetNames[0];  // Assuming data is in the first sheet
+        
+                    // Parse the sheet to JSON
+                    const sheet = workbook.Sheets[sheetName];
+                    const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        
+                    // Process the data and store the updated version
+                    const result = processExcelData(jsonData);
+        
+                    // Update the global updatedExcelData with the result
+                    updatedExcelData = result.updatedData;
+        
+                    // Display the combined interviews and unassigned data
+                    displayCombinedSlots(result.combined);
+                    displayUnassigned(result.unassignedSAs, result.unassignedMs);
+        
+                    // Show download button
+                    document.getElementById('downloadBtn').style.display = 'inline';
+                };
+                reader.readAsArrayBuffer(file);
+            }
+        
+            // Function to process Excel data
+            function processExcelData(data) {
+                const SACols = [1, 2, 3, 4, 5, 6, 7];  // Columns for SAs (assuming 7 SAs)
+                const MCols = [8, 9, 10, 11, 12, 13, 14, 15, 16];  // Columns for Ms (assuming 9 Ms)
+        
+                const combined = [];
+                const unassignedSAs = [];
+                const unassignedMs = [];
+        
+                for (let i = 1; i < data.length; i++) {
+                    const timeSlot = data[i][0];  // Assuming first column is Time Slot
+        
+                    // Fresh tracking for each time period
+                    let assignedSAsForThisSlot = new Set();
+                    let assignedMsForThisSlot = new Set();
+                    let availableSA = [];
+                    let availableM = [];
+        
+                    // Collect available SAs for this time slot
+                    SACols.forEach(col => {
+                        const sa = data[0][col];  // Header row contains SA names
+                        if (data[i][col] === 'X' && !assignedSAsForThisSlot.has(sa)) {
+                            availableSA.push(sa);
+                        }
+                    });
+        
+                    // Collect available Ms for this time slot
+                    MCols.forEach(col => {
+                        const m = data[0][col];  // Header row contains M names
+                        if (data[i][col] === 'X' && !assignedMsForThisSlot.has(m)) {
+                            availableM.push(m);
+                        }
+                    });
+        
+                    // Ensure all SAs and Ms are assigned only once per time slot
+                    while (availableSA.length > 0 && availableM.length > 0) {
+                        const sa = availableSA.shift();  // Take the first available SA
+                        const m = availableM.shift();    // Take the first available M
+        
+                        // Add to combined interviews
+                        combined.push({
+                            timeSlot: timeSlot,
+                            SA: sa,
+                            M: m
+                        });
+        
+                        // Mark the SA and M as assigned for this time slot
+                        assignedSAsForThisSlot.add(sa);
+                        assignedMsForThisSlot.add(m);
+        
+                        // Update the Excel data with combined information
+                        const existing = data[i][17] || '';
+                        data[i][17] = existing + `\n${sa} & ${m}`;  // Append to the new column
+                    }
+        
+                    // Store the unassigned SAs and Ms for this time slot
+                    if (availableSA.length > 0) {
+                        unassignedSAs.push({ timeSlot: timeSlot, SAs: availableSA });
+                    }
+        
+                    if (availableM.length > 0) {
+                        unassignedMs.push({ timeSlot: timeSlot, Ms: availableM });
+                    }
+                }
+        
+                return { combined, unassignedSAs, unassignedMs, updatedData: data };
+            }
+        
+            // Function to display combined slots on the page
+            function displayCombinedSlots(combined) {
+                const combinedTable = document.getElementById('combinedSlotsTable').getElementsByTagName('tbody')[0];
+                combinedTable.innerHTML = '';  // Clear only the body of the table, leaving headers intact
+        
+                combined.forEach(slot => {
+                    const row = document.createElement('tr');
+                    const timeCell = document.createElement('td');
+                    const saCell = document.createElement('td');
+                    const mCell = document.createElement('td');
+        
+                    timeCell.textContent = slot.timeSlot;
+                    saCell.textContent = slot.SA;
+                    mCell.textContent = slot.M;
+        
+                    row.appendChild(timeCell);
+                    row.appendChild(saCell);
+                    row.appendChild(mCell);
+                    combinedTable.appendChild(row);
+                });
+            }
+        
+            // Function to display unassigned SAs and Ms on the page
+            function displayUnassigned(unassignedSAs, unassignedMs) {
+                const unassignedSATable = document.getElementById('unassignedSATable').getElementsByTagName('tbody')[0];
+                const unassignedMTable = document.getElementById('unassignedMTable').getElementsByTagName('tbody')[0];
+        
+                unassignedSATable.innerHTML = '';  // Clear only the body of the table, leaving headers intact
+                unassignedMTable.innerHTML = '';   // Clear only the body of the table, leaving headers intact
+        
+                unassignedSAs.forEach(slot => {
+                    const row = document.createElement('tr');
+                    const timeCell = document.createElement('td');
+                    const saCell = document.createElement('td');
+        
+                    timeCell.textContent = slot.timeSlot;
+                    saCell.textContent = slot.SAs.join(', ');
+        
+                    row.appendChild(timeCell);
+                    row.appendChild(saCell);
+                    unassignedSATable.appendChild(row);
+                });
+        
+                unassignedMs.forEach(slot => {
+                    const row = document.createElement('tr');
+                    const timeCell = document.createElement('td');
+                    const mCell = document.createElement('td');
+        
+                    timeCell.textContent = slot.timeSlot;
+                    mCell.textContent = slot.Ms.join(', ');
+        
+                    row.appendChild(timeCell);
+                    row.appendChild(mCell);
+                    unassignedMTable.appendChild(row);
+                });
+            }
+        
+            // Function to download updated Excel file
+            function downloadExcel() {
+                if (!updatedExcelData) {
+                    alert("No data available for download!");
+                    return;
+                }
+        
+                // Create new sheet with updated data
+                const newSheet = XLSX.utils.aoa_to_sheet(updatedExcelData);
+                const newWorkbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(newWorkbook, newSheet, sheetName);
+        
+                // Create a blob and trigger download
+                const wbout = XLSX.write(newWorkbook, {bookType: 'xlsx', type: 'array'});
+                const blob = new Blob([wbout], {type: "application/octet-stream"});
+        
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = 'updated_interview_schedule.xlsx';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+        </script>
+</body>
+
+</html>
