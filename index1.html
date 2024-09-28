@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interview Scheduler</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.16.9/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f4f4;
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+
+        h2 {
+            color: #555;
+            margin-top: 30px;
+            text-align: center;
+        }
+
+        input[type="file"] {
+            margin: 20px auto;
+            display: block;
+            padding: 10px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background-color: #fff;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        th, td {
+            border: 1px solid #ccc;
+            padding: 12px;
+            text-align: center;
+            transition: background-color 0.3s;
+        }
+
+        th {
+            background-color: #007BFF;
+            color: white;
+        }
+
+        tr:hover {
+            background-color: #f1f1f1;
+        }
+
+        button {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 16px;
+            color: white;
+            background-color: #28a745;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #218838;
+        }
+
+        #result {
+            margin-top: 20px;
+            background-color: #fff;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        #uncombined-table {
+            margin-top: 40px;
+        }
+
+        .uncombined-table th, .uncombined-table td {
+            border: 1px solid #ccc;
+            padding: 10px;
+            text-align: center;
+        }
+
+        .uncombined-table th {
+            background-color: #dc3545;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <h1>Interview Scheduler</h1>
+    <input type="file" id="file-input" accept=".xlsx, .xls" />
+    <table id="schedule-table">
+        <thead>
+            <tr>
+                <th>Employee Name</th>
+                <th>Tech</th>
+                <th>Grade</th>
+                <th>9 AM - 10 AM</th>
+                <th>10 AM - 11 AM</th>
+                <th>11 AM - 12 PM</th>
+                <th>12 PM - 1 PM</th>
+                <th>1 PM - 2 PM</th>
+                <th>2 PM - 3 PM</th>
+                <th>3 PM - 4 PM</th>
+                <th>4 PM - 5 PM</th>
+                <th>5 PM - 6 PM</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Rows will be populated dynamically -->
+        </tbody>
+    </table>
+
+    <button id="schedule-btn">Schedule Interviews</button>
+    <!-- <h2>Scheduled Slots</h2> -->
+    <!-- <div id="result"></div> -->
+
+    <h2>Uncombined Employees</h2>
+    <table id="uncombined-table" class="uncombined-table">
+        <thead>
+            <tr>
+                <th>Employee Name</th>
+                <th>Tech</th>
+                <th>Grade</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Uncombined employees will be listed here -->
+        </tbody>
+    </table>
+
+    <script>
+        const scheduleTableBody = document.querySelector('#schedule-table tbody');
+        // const resultDiv = document.getElementById('result');
+        const uncombinedTableBody = document.querySelector('#uncombined-table tbody');
+        const scheduleButton = document.getElementById('schedule-btn');
+        const fileInput = document.getElementById('file-input');
+
+        let employees = [];
+
+        // Function to read the Excel file
+        function readExcelFile(file) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert the sheet to JSON
+                employees = XLSX.utils.sheet_to_json(worksheet);
+                
+                // Populate the table
+                populateTable(employees);
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // Populate table with employee data
+        function populateTable(employees) {
+            scheduleTableBody.innerHTML = ''; // Clear existing table data
+            employees.forEach(emp => {
+                const row = document.createElement('tr');
+                row.innerHTML = `<td>${emp['employee name']}</td><td>${emp.Tech}</td><td>${emp.Grade}</td>${Array.from({ length: 9 }, (_, i) => `<td>${emp[slots[i]] || ''}</td>`).join('')}`;
+                scheduleTableBody.appendChild(row);
+            });
+        }
+
+        // Function to schedule interviews and append to the existing table
+        function scheduleInterviews() {
+            const slots = ['9 AM - 10 AM', '10 AM - 11 AM', '11 AM - 12 PM', '12 PM - 1 PM', '1 PM - 2 PM', '2 PM - 3 PM', '3 PM - 4 PM', '4 PM - 5 PM', '5 PM - 6 PM'];
+
+            // Create a container for scheduled interviews
+            const scheduledInterviewRows = [];
+            const uncombinedSAs = new Set(); // Track uncombined SAs
+            const uncombinedMs = new Set(); // Track uncombined Ms
+
+            // For each time slot, pair SAs and Ms
+            slots.forEach((slot) => {
+                // Create a copy of the original arrays to modify
+                let saCandidates = employees.filter(emp => emp.Grade === 'SA' && emp[slot] === 'X');
+                let mCandidates = employees.filter(emp => emp.Grade === 'M' && emp[slot] === 'X');
+
+                // Track the already paired SAs and Ms in this slot
+                const pairedSAs = new Set();
+                const pairedMs = new Set();
+
+                saCandidates.forEach(sa => {
+                    mCandidates.forEach(m => {
+                        if (sa.Tech !== m.Tech && !pairedSAs.has(sa['employee name']) && !pairedMs.has(m['employee name'])) {
+                            // Create a new row for the scheduled interview
+                            const scheduledRow = {
+                                'employee name': `${sa['employee name']} (SA) and ${m['employee name']} (M)`,
+                                'Tech': sa.Tech + ' & ' + m.Tech,
+                                'Grade': 'Scheduled',
+                                [slot]: 'X'
+                            };
+                            scheduledInterviewRows.push(scheduledRow);
+
+                            // Mark the paired SA and M
+                            pairedSAs.add(sa['employee name']);
+                            pairedMs.add(m['employee name']);
+                        }
+                    });
+                });
+                
+                // // After pairing, update uncombined SAs and Ms
+                // saCandidates.forEach(sa => {
+                //     if (!pairedSAs.has(sa['employee name'])) {
+                //         uncombinedSAs.add(sa);
+                //     }
+                // });
+
+                // mCandidates.forEach(m => {
+                //     if (!pairedMs.has(m['employee name'])) {
+                //         uncombinedMs.add(m);
+                //     }
+                // });
+                mCandidates.forEach((m, index) => {
+        for (let j = index + 1; j < mCandidates.length; j++) {
+            const otherM = mCandidates[j];
+
+            // Check if the technologies are different
+            if (m.Tech !== otherM.Tech && !pairedMs.has(m['employee name']) && !pairedMs.has(otherM['employee name'])) {
+                // Create a new row for the scheduled interview
+                const scheduledRow = {
+                    'employee name': `${m['employee name']} (M) and ${otherM['employee name']} (M)`,
+                    'Tech': m.Tech + ' & ' + otherM.Tech,
+                    'Grade': 'Scheduled',
+                    [slot]: 'X'
+                };
+                scheduledInterviewRows.push(scheduledRow);
+
+                // Mark the paired Ms
+                pairedMs.add(m['employee name']);
+                pairedMs.add(otherM['employee name']);
+            }
+        }
+    });
+     // After pairing, update uncombined SAs and Ms
+     saCandidates.forEach(sa => {
+                    if (!pairedSAs.has(sa['employee name'])) {
+                        uncombinedSAs.add(sa);
+                    }
+                });
+
+                mCandidates.forEach(m => {
+                    if (!pairedMs.has(m['employee name'])) {
+                        uncombinedMs.add(m);
+                    }
+                });
+            });
+            
+            
+            // Clear previous results
+            // resultDiv.innerHTML = '';
+
+            // Append scheduled interviews to the existing table
+            scheduledInterviewRows.forEach(rowData => {
+                const newRow = document.createElement('tr');
+                newRow.innerHTML = `<td>${rowData['employee name']}</td><td>${rowData.Tech}</td><td>${rowData.Grade}</td><td>${rowData['9 AM - 10 AM'] || ''}</td><td>${rowData['10 AM - 11 AM'] || ''}</td><td>${rowData['11 AM - 12 PM'] || ''}</td><td>${rowData['12 PM - 1 PM'] || ''}</td><td>${rowData['1 PM - 2 PM'] || ''}</td><td>${rowData['2 PM - 3 PM'] || ''}</td><td>${rowData['3 PM - 4 PM'] || ''}</td><td>${rowData['4 PM - 5 PM'] || ''}</td><td>${rowData['5 PM - 6 PM'] || ''}</td>`;
+                scheduleTableBody.appendChild(newRow);
+            });
+
+            // Display uncombined results
+            uncombinedTableBody.innerHTML = '';
+
+            // Append uncombined SAs to the uncombined table
+            uncombinedSAs.forEach(sa => {
+                const newRow = document.createElement('tr');
+                newRow.innerHTML = `<td>${sa['employee name']}</td><td>${sa['Tech']}</td><td>SA</td>`;
+                uncombinedTableBody.appendChild(newRow);
+            });
+
+            // Append remaining uncombined Ms to the uncombined table
+            uncombinedMs.forEach(m => {
+                const newRow = document.createElement('tr');
+                newRow.innerHTML = `<td>${m['employee name']}</td><td>${m['Tech']}</td><td>M</td>`;
+                uncombinedTableBody.appendChild(newRow);
+            });
+
+            if (scheduledInterviewRows.length === 0) {
+                resultDiv.innerHTML = "<p>No scheduled interviews for the selected time slots.</p>";
+            }
+        }
+
+        // Event listeners
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                readExcelFile(file);
+            }
+        });
+
+        scheduleButton.addEventListener('click', scheduleInterviews);
+    </script>
+</body>
+</html>
